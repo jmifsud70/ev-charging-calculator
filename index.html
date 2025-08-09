@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Joseph's EV Charging Calculator</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#2563eb" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html {
+      color-scheme: light dark;
+    }
+  </style>
+</head>
+<body class="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen p-4">
+  <div class="max-w-xl mx-auto bg-white dark:bg-gray-800 shadow-xl rounded-2xl p-6">
+    <h1 class="text-2xl font-bold mb-4 text-center">Joseph's EV Charging Calculator</h1>
+
+    <!-- Battery Inputs -->
+    <div class="grid grid-cols-1 gap-4 text-base md:text-lg">
+       <label>🔋Battery Capacity (kWh)
+        <input type="number" id="batteryCapacity" class="input" placeholder="e.g. 60" />
+      </label>
+      <label>🪫Current Battery Level (%)
+        <input type="number" id="currentLevel" class="input" placeholder="e.g. 20" />
+      </label>
+      <label>🔋 Target Battery Level (%)
+        <input type="number" id="targetLevel" class="input" placeholder="e.g. 80" />
+      </label>
+
+      <!-- Charging Type -->
+      <label>🔌 Charging Type
+        <select id="chargingType" class="input">
+          <option value="ac1">AC Single-Phase (230V)</option>
+          <option value="ac3">AC Three-Phase (400V)</option>
+          <option value="dc">DC Fast Charging (Input kW)</option>
+        </select>
+      </label>
+
+      <!-- Conditional Inputs -->
+      <label id="currentInput">⚡ Charging Current (A)
+        <input type="number" id="current" class="input" placeholder="e.g. 16" max="32" />
+      </label>
+      <label id="dcInput" class="hidden">⚡ Charging Power (kW)
+        <input type="number" id="dcPower" class="input" placeholder="e.g. 50" />
+      </label>
+
+      <label>💶 Electricity Cost (€/kWh)
+        <input type="number" id="costPerKWh" class="input" placeholder="e.g. 0.30" step="0.01" />
+      </label>
+
+      <label class="inline-flex items-center gap-2">
+        <input type="checkbox" id="efficiencyLoss" /> Include 10% charging loss
+      </label>
+
+      <button onclick="calculate()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition">Calculate</button>
+    </div>
+
+    <!-- Output -->
+    <div id="output" class="mt-6 space-y-2 text-base"></div>
+
+    <!-- Disclaimer -->
+    <p class="text-xs text-gray-500 dark:text-gray-400 mt-6 text-center">
+      ⚠️ Disclaimer: This calculator is provided for informational purposes only and does not constitute professional or financial advice. All results are estimates based on user input. Accuracy is not guaranteed. Users should independently verify any information before relying on it. The developer is not responsible for any decisions or damages resulting from the use of this tool.
+    </p>
+  </div>
+
+  <script>
+    const chargingType = document.getElementById("chargingType");
+    const currentInput = document.getElementById("currentInput");
+    const dcInput = document.getElementById("dcInput");
+    const currentField = document.getElementById("current");
+
+    const fields = [
+      "batteryCapacity", "currentLevel", "targetLevel",
+      "chargingType", "current", "dcPower", "costPerKWh", "efficiencyLoss"
+    ];
+
+    // Load saved values
+    window.addEventListener("load", () => {
+      fields.forEach(id => {
+        const el = document.getElementById(id);
+        const saved = localStorage.getItem(id);
+        if (saved !== null) {
+          if (el.type === "checkbox") {
+            el.checked = saved === "true";
+          } else {
+            el.value = saved;
+          }
+        }
+      });
+      chargingType.dispatchEvent(new Event("change"));
+
+      // Register service worker
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('service-worker.js');
+      }
+    });
+
+    // Save on input
+    fields.forEach(id => {
+      const el = document.getElementById(id);
+      el.addEventListener("input", () => {
+        if (el.type === "checkbox") {
+          localStorage.setItem(id, el.checked);
+        } else {
+          localStorage.setItem(id, el.value);
+        }
+      });
+    });
+
+    chargingType.addEventListener("change", () => {
+      const type = chargingType.value;
+      if (type === "dc") {
+        dcInput.classList.remove("hidden");
+        currentInput.classList.add("hidden");
+      } else {
+        dcInput.classList.add("hidden");
+        currentInput.classList.remove("hidden");
+        currentField.setAttribute("max", "32");
+      }
+    });
+
+    function calculate() {
+      const battery = parseFloat(document.getElementById("batteryCapacity").value);
+      const currentPct = parseFloat(document.getElementById("currentLevel").value);
+      const targetPct = parseFloat(document.getElementById("targetLevel").value);
+      const cost = parseFloat(document.getElementById("costPerKWh").value);
+      const loss = document.getElementById("efficiencyLoss").checked;
+      const type = chargingType.value;
+
+      if (targetPct <= currentPct) {
+        alert("Target battery level must be greater than current level.");
+        return;
+      }
+
+      const energyNeeded = battery * (targetPct - currentPct) / 100;
+      const effectiveEnergy = loss ? energyNeeded * 1.1 : energyNeeded;
+
+      let power = 0;
+      if (type === "dc") {
+        power = parseFloat(document.getElementById("dcPower").value);
+      } else {
+        const current = parseFloat(document.getElementById("current").value);
+        if (current > 32) {
+          alert("Charging current for AC is limited to 32A.");
+          return;
+        }
+        const voltage = type === "ac1" ? 230 : 230 * 3;
+        power = voltage * current / 1000;
+      }
+
+      const time = effectiveEnergy / power;
+      const costTotal = effectiveEnergy * cost;
+
+      const hours = Math.floor(time);
+      const minutes = Math.round((time - hours) * 60);
+
+      document.getElementById("output").innerHTML = `
+        <div><strong>⚡ Charging Power:</strong> ${power.toFixed(2)} kW</div>
+        <div><strong>🔋 Energy Needed:</strong> ${energyNeeded.toFixed(2)} kWh</div>
+        <div><strong>⏱ Charging Time:</strong> ${hours}h ${minutes}m</div>
+        <div><strong>💶 Charging Cost:</strong> €${costTotal.toFixed(2)}</div>
+      `;
+    }
+  </script>
+
+  <style>
+    .input {
+      width: 100%;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid #ccc;
+      background-color: white;
+      color: black;
+      font-size: 1rem;
+    }
+    .dark .input {
+      background-color: #1f2937;
+      color: white;
+      border: 1px solid #555;
+    }
+  </style>
+</body>
+</html>
