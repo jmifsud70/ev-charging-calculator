@@ -1,5 +1,5 @@
 {
-  "name": "Joseph's EV Charging Calculator",
+  "name": "EV Charging Calculator",
   "short_name": "EV Calculator",
   "start_url": ".",
   "display": "standalone",
